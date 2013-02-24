@@ -144,7 +144,7 @@ def synchronize_subtitles(subtitle,gradient,matchs):
 
 
 def usage():
-    print "Usage: ./srtmerge [options] text_file.srt sync_file.srt out.srt"
+    print "Usage: ./smartSRTSynchronizer [options] text_file.srt sync_file.srt out.srt"
     print "  -e <encoding>                          Encoding of input text file"
     print "  --encoding_text_file=<encoding>        default: utf_8"
     print "  --encoding_sync_file=<encoding>        default: utf_8"

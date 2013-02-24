@@ -42,6 +42,16 @@ class Candidate:
     def v0(self,gradient):
         return self.diff()-gradient*self.time2()
 
+    def check_surrounding_subtitles(self):
+        surrounding_pairs=[(x1,x2) for x1 in range(max(0,self.x1-3),self.x1) for x2 in range(max(0,self.x2-3),self.x2)] +\
+                          [(x1,x2) for x1 in range(self.x1+1,min(len(self.subs1),self.x1+4)) for x2 in range(self.x2+1,min(len(self.subs2),self.x2+4))]
+        nb_match=0
+        for (sx1,sx2) in surrounding_pairs:
+            sc=Candidate(self.subs1,self.subs2,sx1,sx2)
+            if abs(self.diff()-sc.diff())<SMALL_TIME_DIFF:
+                nb_match+=1
+        return (nb_match>=2)
+
 
 def get_candidates(tm,subs1,subs2,time_max_shift=pysrt.SubRipTime(minutes=2)):
     candidates=[]
@@ -50,7 +60,7 @@ def get_candidates(tm,subs1,subs2,time_max_shift=pysrt.SubRipTime(minutes=2)):
             if sub2.start>sub1.start-time_max_shift and sub2.start<sub1.start+time_max_shift:
                 if tm.is_similar(sub1.text,sub2.text):
                     candidates+=[Candidate(subs1,subs2,x1,x2)]
-    return candidates
+    return [candidate for candidate in candidates if candidate.check_surrounding_subtitles()]
 
 def compute_coefs(times,diffs,x1,x2):
     gradient=float(diffs[x2]-diffs[x1])/float(times[x2]-times[x1])
@@ -86,13 +96,14 @@ def filter_outliers(candidates,gradient):
     filtered_candidates=[]
     for x in range(0,len(candidates)):
             nb_match=0
-            for y in range(max(0,x-10),max(0,x-1))+range(min(len(candidates),x+1),min(len(candidates),x+10)):
+            for y in range(max(0,x-10),x)+range(min(len(candidates),x+1),min(len(candidates),x+10)):
                 shift=candidates[y].diff()-(candidates[x].diff()+(candidates[y].time2()-candidates[x].time2())*gradient)
                 if abs(shift)<SMALL_TIME_DIFF:
                     nb_match+=1
             if (nb_match>=3): # and abs(shift2)<500):
                 filtered_candidates.append(candidates[x])
     return filtered_candidates
+
 
 
 def compute_regression(candidates,display_graph):
@@ -111,9 +122,10 @@ def compute_regression(candidates,display_graph):
         pyplot.plot([c.time2() for c in filtered_candidates],[c.diff() for c in filtered_candidates],'go')
 
         pyplot.plot(times2,[x*gradient+filtered_candidates[0].v0(gradient) for x in times2],'r-')
-        pyplot.show()
+        pyplot.draw()
 
-    return (gradient,candidates)
+
+    return (gradient,filtered_candidates)
 
 
 def synchronize_subtitles(subtitle,gradient,matchs):
@@ -121,11 +133,13 @@ def synchronize_subtitles(subtitle,gradient,matchs):
         if i==0:
             starts_after=0
             shift=-matchs[i].v0(gradient)
+            starts_before=matchs[0].time2()+1
         else:
             starts_after=matchs[i-1].time2()
+            starts_before=matchs[i].time2()+1
             shift=max(-matchs[i].v0(gradient),-matchs[i-1].v0(gradient))
 
-        starts_before=matchs[i-1].time2()+1
+
 
 
 
@@ -154,7 +168,7 @@ def usage():
 
 def main():
     try:
-        opts, args = getopt.getopt(sys.argv[1:], 'hgd:e:', ["help", "encoding_text_file=", "encoding_time_file=", "encoding_output=","dictionnary="])
+        opts, args = getopt.getopt(sys.argv[1:], 'hgd:e:', ["help", "encoding_text_file=", "encoding_time_file=", "encoding_output=","dictionnary=", "gui"])
     except getopt.GetoptError, err:
         print str(err)
         usage()
@@ -169,6 +183,8 @@ def main():
     encoding_output=""
     dictionary_file=""
     display_graph=False
+    use_gui=False
+
 
     for o, a in opts:
         if o in ("-e", "--encoding_text_file"):
@@ -181,21 +197,41 @@ def main():
             dictionary_file = a
         elif o in ("-g"):
             display_graph=True
+        elif o in ("--gui"):
+            use_gui=True
         elif o in ("-h", "--help"):
             usage()
             sys.exit()
 
+    if (len(args)==3):
+        text_file=args[0]
+        sync_file=args[1]
+        output_file=args[2]
+    else:
+        if not use_gui:
+            usage()
+
+
+    if use_gui:
+        from Tkinter import Tk
+        from tkFileDialog import askopenfilename
+        from tkFileDialog import asksaveasfilename
+
+        Tk().withdraw() # we don't want a full GUI, so keep the root window from appearing
+        text_file = askopenfilename(title="Please choose input SRT file with target subtitle text")
+        sync_file = askopenfilename(title="Please choose input SRT file with target subtitle synchronisation")
+        output_file=asksaveasfilename(title="Please choose output SRT file")
 
 
     if (encoding1!=""):
-        subs_text = SubRipFile.open(args[0], encoding=encoding1)
+        subs_text = SubRipFile.open(text_file, encoding=encoding1)
     else:
-        subs_text = SubRipFile.open(args[0])
+        subs_text = SubRipFile.open(text_file)
 
     if (encoding2!=""):
-        subs_time = SubRipFile.open(args[1], encoding=encoding2)
+        subs_time = SubRipFile.open(sync_file, encoding=encoding2)
     else:
-        subs_time = SubRipFile.open(args[1])
+        subs_time = SubRipFile.open(sync_file)
 
     if (dictionary_file==""):
         tm=textMatcher.BilingualTextMatcher()
@@ -204,14 +240,24 @@ def main():
 
     candidates= get_candidates(tm,subs_time,subs_text)
 
+    print "Number of matches (first pass): ",len(candidates)
+
     gradient,matchs=compute_regression(candidates,display_graph)
-    
+
+    print "Number of matches (second pass): ",len(matchs)
+
+    print "Multiplier: ",1/(1+gradient)
+
     new_subtitle=synchronize_subtitles(subs_text,gradient,matchs)
 
     if (encoding_output!=""):
-        new_subtitle.save(args[2],encoding=encoding_output)
+        new_subtitle.save(output_file,encoding=encoding_output)
     else:
-        new_subtitle.save(args[2])
+        new_subtitle.save(output_file)
 
+    print "New subtitle file saved"
+    if (display_graph):
+        import matplotlib.pyplot as pyplot
+        pyplot.show()
 if __name__ == "__main__":
     main()

@@ -122,7 +122,7 @@ class BilingualTextMatcher:
         nb_matching_words=nb_translated_words+nb_equal_words
 
         max_text_length=max(self._text_length(s0),self._text_length(s1))
-        if (nb_matching_words>=max(1,(max_text_length/3)+1)):# or (nb_matching_words==2 and max_text_length<6) or (nb_matching_words==1 and max_text_length<3):
+        if nb_matching_words>=(max_text_length/3+1):
             return True
         else:
             return False

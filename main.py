@@ -8,12 +8,14 @@ __author__ = 'Haltux'
 import textMatcher
 from pysrt import SubRipFile
 import pysrt
-import matplotlib.pyplot as pyplot
+
 
 MINIMUM_INTERVAL_GRADIENT_COMPUTATION=60000
 MAXIMUM_INTERVAL_GRADIENT_COMPUTATION=300000
-SMALL_GRADIENT_DIFF=500
+SMALL_TIME_DIFF=500
 MAX_GRADIENT=0.1
+STEP_GRADIENT=0.001
+BIN_SIZE_MS_GRADIENT_COMPUTATION=100
 MINIMUM_NB_MATCH=10
 SMALL_GRADIENT_INDEX_THRESHOLD=10
 
@@ -21,15 +23,33 @@ SMALL_GRADIENT_INDEX_THRESHOLD=10
 def window(x,mini,maxi):
     return min(max(x,mini),maxi)
 
+class Candidate:
+    def __init__(self,subs1,subs2,x1,x2):
+        self.subs1=subs1
+        self.subs2=subs2
+        self.x1=x1
+        self.x2=x2
+
+    def diff(self):
+        return self.subs2[self.x2].start.ordinal-self.subs1[self.x1].start.ordinal
+
+    def time1(self):
+        return self.subs1[self.x1].start.ordinal
+
+    def time2(self):
+        return self.subs2[self.x2].start.ordinal
+    
+    def v0(self,gradient):
+        return self.diff()-gradient*self.time2()
 
 
 def get_candidates(tm,subs1,subs2,time_max_shift=pysrt.SubRipTime(minutes=2)):
     candidates=[]
-    for sub1 in subs1:
-        selected_subs2=subs2.slice(starts_after=sub1.start-time_max_shift,starts_before=sub1.start+time_max_shift)
-        for sub2 in selected_subs2:
-            if tm.is_similar(sub1.text,sub2.text):
-                candidates+=[(sub1,sub2)]
+    for x1,sub1 in enumerate(subs1):
+        for x2,sub2 in enumerate(subs2):
+            if sub2.start>sub1.start-time_max_shift and sub2.start<sub1.start+time_max_shift:
+                if tm.is_similar(sub1.text,sub2.text):
+                    candidates+=[Candidate(subs1,subs2,x1,x2)]
     return candidates
 
 def compute_coefs(times,diffs,x1,x2):
@@ -37,92 +57,80 @@ def compute_coefs(times,diffs,x1,x2):
     v0=diffs[x1]-times[x1]*gradient
     return (v0,gradient)
 
-def get_average_main_cluster(elts,cluster_size):
-    clusters=[]
-
-    for (gradient,length) in elts:
-        found=False
-        for cluster in clusters:
-            if abs((gradient-cluster[1])*length)<cluster_size:
-                cluster[0].append(gradient)
-                cluster[1]=float(sum(cluster[0]))/len(cluster[0])
-                found=True
-                break
-        if not found:
-            clusters.append([[gradient],float(gradient)])
-    biggest_cluster=max(clusters,key=lambda c:len(c[0]))
-    return biggest_cluster[1]
-
     
+def get_main_gradient(candidates):
+    biggest_bin_best_gradient=0
+    best_gradient=0
+    gradient=-MAX_GRADIENT
+    while gradient<MAX_GRADIENT:
+        v0_bins={}
+        for candidate in candidates:
+            v0=candidate.v0(gradient)
+            bin_number=int(v0/BIN_SIZE_MS_GRADIENT_COMPUTATION)
+            if bin_number in v0_bins:
+                v0_bins[bin_number]+=1
+            else:
+                v0_bins[bin_number]=1
+            if bin_number+1 in v0_bins:
+                v0_bins[bin_number+1]+=1
+            else:
+                v0_bins[bin_number+1]=1
+        biggest_bin=max(v0_bins.values())
+        if biggest_bin>biggest_bin_best_gradient:
+            best_gradient=gradient
+            biggest_bin_best_gradient=biggest_bin
+        gradient+=STEP_GRADIENT
+    return best_gradient
+
+def filter_outliers(candidates,gradient):
+    filtered_candidates=[]
+    for x in range(0,len(candidates)):
+            nb_match=0
+            for y in range(max(0,x-10),max(0,x-1))+range(min(len(candidates),x+1),min(len(candidates),x+10)):
+                shift=candidates[y].diff()-(candidates[x].diff()+(candidates[y].time2()-candidates[x].time2())*gradient)
+                if abs(shift)<SMALL_TIME_DIFF:
+                    nb_match+=1
+            if (nb_match>=3): # and abs(shift2)<500):
+                filtered_candidates.append(candidates[x])
+    return filtered_candidates
 
 
-def compute_regression(candidates):
-    times1=[s1.start.ordinal for (s1,s2) in candidates]
-    times2=[s2.start.ordinal for (s1,s2) in candidates]
-    diffs=[y-x for (x,y) in zip(times1,times2)]
+def compute_regression(candidates,display_graph):
+    gradient=get_main_gradient(candidates)
 
-    l=len(times1)
-    lines=[]
-    for x1 in range(0,l):
-        x2=x1+1
-        while x2<len(times1) and times1[x2]-times1[x1]<MINIMUM_INTERVAL_GRADIENT_COMPUTATION:
-            x2+=1
-        while x2<len(times1) and times1[x2]-times1[x1]<MAXIMUM_INTERVAL_GRADIENT_COMPUTATION:
-            v0,gradient=compute_coefs(times1,diffs,x1,x2)
-            if abs(gradient)<MAX_GRADIENT:
-                lines+=[(v0,gradient,x2-x1)]
-            x2+=1
+    filtered_candidates=filter_outliers(candidates,gradient)
 
+    if (display_graph):
+        import matplotlib.pyplot as pyplot
+        ax = pyplot.gca()
+        ax.set_autoscale_on(False)
+        times2=[c.time2() for c in candidates]
+        cv0s=[c.v0(gradient) for c in filtered_candidates]
+        pyplot.axis([min(times2),max(times2),min(cv0s)-10000,max(cv0s)+10000])
+        pyplot.plot([c.time2() for c in candidates],[c.diff() for c in candidates],'o')
+        pyplot.plot([c.time2() for c in filtered_candidates],[c.diff() for c in filtered_candidates],'go')
 
-    central_gradient=get_average_main_cluster([(gradient,length) for (v0,gradient,length) in lines],SMALL_GRADIENT_DIFF)
+        pyplot.plot(times2,[x*gradient+filtered_candidates[0].v0(gradient) for x in times2],'r-')
+        pyplot.show()
 
-    ratio=1/(1+central_gradient)
-
-    ctimes2=[]
-    cdiffs=[]
-    cv0s=[]
-    for x in range(0,len(diffs)):
-        nb_match=0
-        for y in range(max(0,x-10),max(0,x-1))+range(min(len(diffs),x+1),min(len(diffs),x+10)):
-            shift=diffs[y]-(diffs[x]+(times1[y]-times1[x])*central_gradient)
-            if abs(shift)<500:
-                nb_match+=1
-        if (nb_match>=3): # and abs(shift2)<500):
-            ctimes2.append(times2[x])
-            cdiffs.append(diffs[x])
-            cv0s.append(diffs[x]-times2[x]*central_gradient)
+    return (gradient,candidates)
 
 
-
-    ax = pyplot.gca()
-    ax.set_autoscale_on(False)
-    pyplot.axis([min(times1),max(times1),min(cv0s)-10000,max(cv0s)+10000])
-    pyplot.plot(times2,diffs,'o')
-    pyplot.plot(ctimes2,cdiffs,'go')
-
-    pyplot.plot(times2,[x*central_gradient+cv0s[0] for x in times2],'r-')
-    pyplot.show()
-
-    return (ratio,ctimes2,cv0s)
-
-    #A = numpy.vstack([subs1_starts, numpy.ones(len(subs1_starts))]).T
-    #m,c=numpy.linalg.lstsq(A,diffs)[0]
-
-def synchronize_subtitles(subtitle,ratio,times,v0s):
-    for i in range(0,len(times)):
+def synchronize_subtitles(subtitle,gradient,matchs):
+    for i in range(0,len(matchs)):
         if i==0:
             starts_after=0
-            shift=-v0s[i]
+            shift=-matchs[i].v0(gradient)
         else:
-            starts_after=times[i-1]
-            shift=max(-v0s[i],-v0s[i-1])
+            starts_after=matchs[i-1].time2()
+            shift=max(-matchs[i].v0(gradient),-matchs[i-1].v0(gradient))
 
-        starts_before=times[i]+1
+        starts_before=matchs[i-1].time2()+1
 
 
 
         slice=copy.deepcopy(subtitle.slice(starts_before=starts_before,starts_after=starts_after))
-        slice.shift(milliseconds=shift,ratio=ratio)
+        slice.shift(milliseconds=shift,ratio=1/(1+gradient))
 
         if i==0:
             new_subtitle=slice
@@ -136,13 +144,17 @@ def synchronize_subtitles(subtitle,ratio,times,v0s):
 
 
 def usage():
-    print "Usage: ./srtmerge [options] lang1.srt lang2.srt out.srt"
-    print "  -e <encoding>             Encoding of input and output files."
-    print "  --encoding=<encoding>     default: utf_8"
+    print "Usage: ./srtmerge [options] text_file.srt sync_file.srt out.srt"
+    print "  -e <encoding>                          Encoding of input text file"
+    print "  --encoding_text_file=<encoding>        default: utf_8"
+    print "  --encoding_sync_file=<encoding>        default: utf_8"
+    print "  --encoding_output=<encoding>           default: utf_8"
+    print "  --dictionnary=<dictionnary_file>       default: english-french"
+    print "  -g                                     Display output graph (for debugging purposes)"
 
 def main():
     try:
-        opts, args = getopt.getopt(sys.argv[1:], 'hd:e:', ["help", "encoding_text_file=", "encoding_time_file=", "encoding_output="])
+        opts, args = getopt.getopt(sys.argv[1:], 'hgd:e:', ["help", "encoding_text_file=", "encoding_time_file=", "encoding_output=","dictionnary="])
     except getopt.GetoptError, err:
         print str(err)
         usage()
@@ -155,6 +167,8 @@ def main():
     encoding1=""
     encoding2=""
     encoding_output=""
+    dictionary_file=""
+    display_graph=False
 
     for o, a in opts:
         if o in ("-e", "--encoding_text_file"):
@@ -163,6 +177,10 @@ def main():
             encoding2 = a
         elif o in ("--encoding_output_file"):
             encoding_output = a
+        elif o in ("--dictionary"):
+            dictionary_file = a
+        elif o in ("-g"):
+            display_graph=True
         elif o in ("-h", "--help"):
             usage()
             sys.exit()
@@ -179,13 +197,16 @@ def main():
     else:
         subs_time = SubRipFile.open(args[1])
 
-    tm=textMatcher.BilingualTextMatcher()
+    if (dictionary_file==""):
+        tm=textMatcher.BilingualTextMatcher()
+    else:
+        tm=textMatcher.BilingualTextMatcher(dictionary_file)
 
     candidates= get_candidates(tm,subs_time,subs_text)
 
-    ratio,times,v0s=compute_regression(candidates)
-
-    new_subtitle=synchronize_subtitles(subs_text,ratio,times,v0s)
+    gradient,matchs=compute_regression(candidates,display_graph)
+    
+    new_subtitle=synchronize_subtitles(subs_text,gradient,matchs)
 
     if (encoding_output!=""):
         new_subtitle.save(args[2],encoding=encoding_output)

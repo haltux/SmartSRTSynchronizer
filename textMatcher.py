@@ -1,6 +1,6 @@
 import re
 
-__author__ = 'Julien'
+__author__ = 'haltux'
 
 
 def get_text_length(s):

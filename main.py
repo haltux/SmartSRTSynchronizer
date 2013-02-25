@@ -3,7 +3,7 @@ import copy
 import getopt
 import sys
 
-__author__ = 'Haltux'
+__author__ = 'haltux'
 
 import textMatcher
 from pysrt import SubRipFile
@@ -18,6 +18,12 @@ STEP_GRADIENT=0.001
 BIN_SIZE_MS_GRADIENT_COMPUTATION=100
 MINIMUM_NB_MATCH=10
 SMALL_GRADIENT_INDEX_THRESHOLD=10
+
+SURROUNDING_NB_MATCH_REQUIRED_STEP1=4
+SURROUNDING_SIZE_STEP1=5
+
+SURROUNDING_NB_MATCH_REQUIRED_STEP2=3
+SURROUNDING_SIZE_STEP2=10
 
 
 def window(x,mini,maxi):
@@ -43,14 +49,14 @@ class Candidate:
         return self.diff()-gradient*self.time2()
 
     def check_surrounding_subtitles(self):
-        surrounding_pairs=[(x1,x2) for x1 in range(max(0,self.x1-3),self.x1) for x2 in range(max(0,self.x2-3),self.x2)] +\
-                          [(x1,x2) for x1 in range(self.x1+1,min(len(self.subs1),self.x1+4)) for x2 in range(self.x2+1,min(len(self.subs2),self.x2+4))]
+        surrounding_pairs=[(x1,x2) for x1 in range(max(0,self.x1-SURROUNDING_SIZE_STEP1),self.x1) for x2 in range(max(0,self.x2-SURROUNDING_SIZE_STEP1),self.x2)] +\
+                          [(x1,x2) for x1 in range(self.x1+1,min(len(self.subs1),self.x1+SURROUNDING_SIZE_STEP1+1)) for x2 in range(self.x2+1,min(len(self.subs2),self.x2+SURROUNDING_SIZE_STEP1+1))]
         nb_match=0
         for (sx1,sx2) in surrounding_pairs:
             sc=Candidate(self.subs1,self.subs2,sx1,sx2)
             if abs(self.diff()-sc.diff())<SMALL_TIME_DIFF:
                 nb_match+=1
-        return (nb_match>=2)
+        return (nb_match>=SURROUNDING_NB_MATCH_REQUIRED_STEP1)
 
 
 def generate_candidates_from_text_content(tm,subs1,subs2,time_max_shift=pysrt.SubRipTime(minutes=2)):
@@ -93,11 +99,11 @@ def filter_isolated_candidates(candidates,gradient):
     filtered_candidates=[]
     for x in range(0,len(candidates)):
             nb_match=0
-            for y in range(max(0,x-10),x)+range(min(len(candidates),x+1),min(len(candidates),x+10)):
+            for y in range(max(0,x-SURROUNDING_SIZE_STEP2),x)+range(min(len(candidates),x+1),min(len(candidates),x+SURROUNDING_SIZE_STEP2)):
                 shift=candidates[y].diff()-(candidates[x].diff()+(candidates[y].time2()-candidates[x].time2())*gradient)
                 if abs(shift)<SMALL_TIME_DIFF:
                     nb_match+=1
-            if (nb_match>=3): # and abs(shift2)<500):
+            if (nb_match>=SURROUNDING_NB_MATCH_REQUIRED_STEP2): # and abs(shift2)<500):
                 filtered_candidates.append(candidates[x])
     return filtered_candidates
 
@@ -111,9 +117,9 @@ def display_candidates(gradient,candidates1,candidates2,candidates3):
     cv0s=[c.v0(gradient) for c in candidates3]
     pyplot.axis([min(times2),max(times2),min(cv0s)-10000,max(cv0s)+10000])
 
-    pyplot.plot([c.time2() for c in candidates1],[c.diff() for c in candidates1],'o',color="#AAAAAA")
-    pyplot.plot([c.time2() for c in candidates2],[c.diff() for c in candidates2],'o',color="#555555")
-    pyplot.plot([c.time2() for c in candidates3],[c.diff() for c in candidates3],'o',color="#000000")
+    pyplot.plot([c.time2() for c in candidates1],[c.diff() for c in candidates1],'o',color="#FFBBBB")
+    pyplot.plot([c.time2() for c in candidates2],[c.diff() for c in candidates2],'o',color="#FF8888")
+    pyplot.plot([c.time2() for c in candidates3],[c.diff() for c in candidates3],'o',color="#FF0000")
 
 
     #pyplot.plot(times2,[x*gradient+matching_candidates[0].v0(gradient) for x in times2],'r-')
@@ -235,7 +241,7 @@ def main():
 
     selected_candidates=filter_candidates_from_neighbourhood(candidates)
 
-    print "Number of matches (first pass): ",len(selected_candidates)
+    print "Number of matches (second pass): ",len(selected_candidates)
 
     gradient=compute_gradient(candidates)
 
@@ -244,7 +250,7 @@ def main():
     if display_graph:
         display_candidates(gradient,candidates,selected_candidates,matching_candidates)
 
-    print "Number of matches (second pass): ",len(matching_candidates)
+    print "Number of matches (third pass): ",len(matching_candidates)
 
     print "Multiplier: ",1/(1+gradient)
 
@@ -259,5 +265,7 @@ def main():
     if (display_graph):
         import matplotlib.pyplot as pyplot
         pyplot.show()
+
+
 if __name__ == "__main__":
     main()

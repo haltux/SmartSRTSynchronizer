@@ -53,22 +53,19 @@ class Candidate:
         return (nb_match>=2)
 
 
-def get_candidates(tm,subs1,subs2,time_max_shift=pysrt.SubRipTime(minutes=2)):
+def generate_candidates_from_text_content(tm,subs1,subs2,time_max_shift=pysrt.SubRipTime(minutes=2)):
     candidates=[]
     for x1,sub1 in enumerate(subs1):
         for x2,sub2 in enumerate(subs2):
             if sub2.start>sub1.start-time_max_shift and sub2.start<sub1.start+time_max_shift:
                 if tm.is_similar(sub1.text,sub2.text):
                     candidates+=[Candidate(subs1,subs2,x1,x2)]
+    return candidates
+
+def filter_candidates_from_neighbourhood(candidates):
     return [candidate for candidate in candidates if candidate.check_surrounding_subtitles()]
-
-def compute_coefs(times,diffs,x1,x2):
-    gradient=float(diffs[x2]-diffs[x1])/float(times[x2]-times[x1])
-    v0=diffs[x1]-times[x1]*gradient
-    return (v0,gradient)
-
     
-def get_main_gradient(candidates):
+def compute_gradient(candidates):
     biggest_bin_best_gradient=0
     best_gradient=0
     gradient=-MAX_GRADIENT
@@ -92,7 +89,7 @@ def get_main_gradient(candidates):
         gradient+=STEP_GRADIENT
     return best_gradient
 
-def filter_outliers(candidates,gradient):
+def filter_isolated_candidates(candidates,gradient):
     filtered_candidates=[]
     for x in range(0,len(candidates)):
             nb_match=0
@@ -106,26 +103,21 @@ def filter_outliers(candidates,gradient):
 
 
 
-def compute_regression(candidates,display_graph):
-    gradient=get_main_gradient(candidates)
+def display_candidates(gradient,candidates1,candidates2,candidates3):
+    import matplotlib.pyplot as pyplot
+    ax = pyplot.gca()
+    ax.set_autoscale_on(False)
+    times2=[c.time2() for c in candidates1]
+    cv0s=[c.v0(gradient) for c in candidates3]
+    pyplot.axis([min(times2),max(times2),min(cv0s)-10000,max(cv0s)+10000])
 
-    filtered_candidates=filter_outliers(candidates,gradient)
-
-    if (display_graph):
-        import matplotlib.pyplot as pyplot
-        ax = pyplot.gca()
-        ax.set_autoscale_on(False)
-        times2=[c.time2() for c in candidates]
-        cv0s=[c.v0(gradient) for c in filtered_candidates]
-        pyplot.axis([min(times2),max(times2),min(cv0s)-10000,max(cv0s)+10000])
-        pyplot.plot([c.time2() for c in candidates],[c.diff() for c in candidates],'o')
-        pyplot.plot([c.time2() for c in filtered_candidates],[c.diff() for c in filtered_candidates],'go')
-
-        pyplot.plot(times2,[x*gradient+filtered_candidates[0].v0(gradient) for x in times2],'r-')
-        pyplot.draw()
+    pyplot.plot([c.time2() for c in candidates1],[c.diff() for c in candidates1],'o',color="#AAAAAA")
+    pyplot.plot([c.time2() for c in candidates2],[c.diff() for c in candidates2],'o',color="#555555")
+    pyplot.plot([c.time2() for c in candidates3],[c.diff() for c in candidates3],'o',color="#000000")
 
 
-    return (gradient,filtered_candidates)
+    #pyplot.plot(times2,[x*gradient+matching_candidates[0].v0(gradient) for x in times2],'r-')
+    pyplot.draw()
 
 
 def synchronize_subtitles(subtitle,gradient,matchs):
@@ -158,23 +150,33 @@ def synchronize_subtitles(subtitle,gradient,matchs):
 
 
 def usage():
-    print "Usage: ./smartSRTSynchronizer [options] text_file.srt sync_file.srt out.srt"
+    print "Usage:   ./smartSRTSynchronizer [options] text_file.srt sync_file.srt out.srt"
+    print "         ./smartSRTSynchronizer [options]"
     print "  -e <encoding>                          Encoding of input text file"
-    print "  --encoding_text_file=<encoding>        default: utf_8"
-    print "  --encoding_sync_file=<encoding>        default: utf_8"
-    print "  --encoding_output=<encoding>           default: utf_8"
+    print "  --encoding_text_file=<encoding>        "
+    print "  --encoding_sync_file=<encoding>        "
+    print "  --encoding_output=<encoding>           "
     print "  --dictionnary=<dictionnary_file>       default: english-french"
     print "  -g                                     Display output graph (for debugging purposes)"
 
 def main():
     try:
-        opts, args = getopt.getopt(sys.argv[1:], 'hgd:e:', ["help", "encoding_text_file=", "encoding_time_file=", "encoding_output=","dictionnary=", "gui"])
+        opts, args = getopt.getopt(sys.argv[1:], 'hgd:e:', ["help", "encoding_text_file=", "encoding_time_file=", "encoding_output=","dictionnary="])
     except getopt.GetoptError, err:
         print str(err)
         usage()
         sys.exit(2)
 
-    if len(args) <> 3:
+    use_gui=False
+
+
+    if (len(args)==3):
+        text_file=args[0]
+        sync_file=args[1]
+        output_file=args[2]
+    elif (len(args)==0):
+        use_gui=True
+    else:
         usage()
         sys.exit(2)
 
@@ -183,7 +185,6 @@ def main():
     encoding_output=""
     dictionary_file=""
     display_graph=False
-    use_gui=False
 
 
     for o, a in opts:
@@ -197,19 +198,9 @@ def main():
             dictionary_file = a
         elif o in ("-g"):
             display_graph=True
-        elif o in ("--gui"):
-            use_gui=True
         elif o in ("-h", "--help"):
             usage()
             sys.exit()
-
-    if (len(args)==3):
-        text_file=args[0]
-        sync_file=args[1]
-        output_file=args[2]
-    else:
-        if not use_gui:
-            usage()
 
 
     if use_gui:
@@ -238,17 +229,26 @@ def main():
     else:
         tm=textMatcher.BilingualTextMatcher(dictionary_file)
 
-    candidates= get_candidates(tm,subs_time,subs_text)
+    candidates= generate_candidates_from_text_content(tm,subs_time,subs_text)
 
     print "Number of matches (first pass): ",len(candidates)
 
-    gradient,matchs=compute_regression(candidates,display_graph)
+    selected_candidates=filter_candidates_from_neighbourhood(candidates)
 
-    print "Number of matches (second pass): ",len(matchs)
+    print "Number of matches (first pass): ",len(selected_candidates)
+
+    gradient=compute_gradient(candidates)
+
+    matching_candidates=filter_isolated_candidates(selected_candidates,gradient)
+
+    if display_graph:
+        display_candidates(gradient,candidates,selected_candidates,matching_candidates)
+
+    print "Number of matches (second pass): ",len(matching_candidates)
 
     print "Multiplier: ",1/(1+gradient)
 
-    new_subtitle=synchronize_subtitles(subs_text,gradient,matchs)
+    new_subtitle=synchronize_subtitles(subs_text,gradient,matching_candidates)
 
     if (encoding_output!=""):
         new_subtitle.save(output_file,encoding=encoding_output)

@@ -22,7 +22,7 @@ SMALL_GRADIENT_INDEX_THRESHOLD=10
 SURROUNDING_NB_MATCH_REQUIRED_STEP1=4
 SURROUNDING_SIZE_STEP1=5
 
-SURROUNDING_NB_MATCH_REQUIRED_STEP2=3
+SURROUNDING_NB_MATCH_REQUIRED_STEP2=4
 SURROUNDING_SIZE_STEP2=10
 
 
@@ -137,10 +137,6 @@ def synchronize_subtitles(subtitle,gradient,matchs):
             starts_before=matchs[i].time2()+1
             shift=max(-matchs[i].v0(gradient),-matchs[i-1].v0(gradient))
 
-
-
-
-
         slice=copy.deepcopy(subtitle.slice(starts_before=starts_before,starts_after=starts_after))
         slice.shift(milliseconds=shift,ratio=1/(1+gradient))
 
@@ -162,12 +158,15 @@ def usage():
     print "  --encoding_text_file=<encoding>        "
     print "  --encoding_sync_file=<encoding>        "
     print "  --encoding_output=<encoding>           "
-    print "  --dictionnary=<dictionnary_file>       default: english-french"
+    print "  --dictionary=<dictionary_file>       use external wiktionary dictionnary"
+    print "                                         default provided dictionary: english-french"
+    print "  --invert-dictionary                    no inverted mode: target dictionary language = text subtitle language"
+    print "                                         inverted mode: target dictionary language = sync subtitle language"
     print "  -g                                     Display output graph (for debugging purposes)"
 
 def main():
     try:
-        opts, args = getopt.getopt(sys.argv[1:], 'hgd:e:', ["help", "encoding_text_file=", "encoding_time_file=", "encoding_output=","dictionnary="])
+        opts, args = getopt.getopt(sys.argv[1:], 'hgd:e:', ["help", "encoding_text_file=", "encoding_time_file=", "encoding_output=","dictionary=","invert_dictionary"])
     except getopt.GetoptError, err:
         print str(err)
         usage()
@@ -191,6 +190,7 @@ def main():
     encoding_output=""
     dictionary_file=""
     display_graph=False
+    invert_dictionary=False
 
 
     for o, a in opts:
@@ -202,6 +202,8 @@ def main():
             encoding_output = a
         elif o in ("--dictionary"):
             dictionary_file = a
+        elif o in ("--invert-dictionary"):
+            invert_dictionary=True
         elif o in ("-g"):
             display_graph=True
         elif o in ("-h", "--help"):
@@ -233,7 +235,7 @@ def main():
     if (dictionary_file==""):
         tm=textMatcher.BilingualTextMatcher()
     else:
-        tm=textMatcher.BilingualTextMatcher(dictionary_file)
+        tm=textMatcher.BilingualTextMatcher(dictionary_file,invert_dictionary)
 
     candidates= generate_candidates_from_text_content(tm,subs_time,subs_text)
 

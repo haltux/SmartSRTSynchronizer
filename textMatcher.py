@@ -1,37 +1,50 @@
+import os
 import re
+import sys
 
 __author__ = 'haltux'
 
-
-def get_text_length(s):
-    return len(s.split)
+REQUIRED_MATCH_RATIO=3
 
 def removeNonAscii(s):
-        return "".join(i for i in s if ord(i)<128)
+    return "".join(i for i in s if ord(i)<128)
+
+
+def preprocess_text(t):
+    output_string=removeNonAscii(t)\
+        .replace(","," ")\
+        .replace("\n"," ")\
+        .replace("."," ")\
+        .replace(";"," ")\
+        .replace("'","' ")\
+        .replace("?"," ")\
+        .replace("!"," ")\
+        .replace("  "," ")\
+        .replace("  "," ")\
+        .strip().lower()
+    output_string=re.sub("\{[^\{]*\}","",output_string)
+    output_string=re.sub("<[^<]*>","",output_string)
+    return output_string
+
+
+def nb_words(t):
+    return len(preprocess_text(t).split(" "))
+
+
 
 class BilingualTextMatcher:
 
-    def __init__(self,dictionary_file=""):
-        self.dicts=self.get_dictionary_wiktionnaire()
+    def __init__(self,dictionary_file="",invert_dictionary=False):
+        if dictionary_file!="":
+            self.get_dictionary_wiktionary()
+        else:
+            self.get_dictionary_wiktionary(dictionary_file,invert_dictionary)
 
 
 
-    def get_dictionary_babel(self,dictionary_file="data\\en-fr-babel.txt"):
-        f=open(dictionary_file)
-        word_counter=0
-        dicts=[{},{}]
-        for line in f:
-            if line[0]!="#":
-                line_fields=line.split("\t")
-                for i,field in enumerate(line_fields):
-                    words=field.split(";")
-                    for word in words:
-                        dicts[i][word.lower().strip()]=word_counter
-                word_counter+=1
-
-        return dicts
-
-    def get_dictionary_wiktionnaire(self,dictionary_file="data\\en-fr-wikt.txt"):
+    def get_dictionary_wiktionary(self,dictionary_file="",invert_dictionary=False):
+        if (dictionary_file==""):
+            dictionary_file=os.path.join("data","en-fr-wikt.txt")
         f=open(dictionary_file)
         dicts=[{},{}]
 
@@ -52,32 +65,16 @@ class BilingualTextMatcher:
                             dicts[1][word1]+=[word0]
                         else:
                             dicts[1][word0]=[word0]
+        
+        if invert_dictionary:
+            self.dicts=[dicts[1],dicts[0]]
+        else:
+            self.dicts=dicts
 
-        return dicts
 
-
-
-    def _preprocess_text(self,t):
-        output_string=removeNonAscii(t)\
-            .replace(","," ")\
-            .replace("\n"," ")\
-            .replace("."," ")\
-            .replace(";"," ")\
-            .replace("'","' ")\
-            .replace("?"," ")\
-            .replace("!"," ")\
-            .replace("  "," ")\
-            .replace("  "," ")\
-            .strip().lower()
-        output_string=re.sub("\{[^\{]*\}","",output_string)
-        output_string=re.sub("<[^<]*>","",output_string)
-        return output_string
-
-    def _text_length(self,t):
-        return len(self._preprocess_text(t).split(" "))
 
     def compute_dictionnary_fingerprint(self,sentence,dict_num):
-        sentence=self._preprocess_text(sentence)
+        sentence=preprocess_text(sentence)
         words=sentence.split(" ")
         fingerprint=set()
         for i,word in enumerate(words):
@@ -90,8 +87,8 @@ class BilingualTextMatcher:
         return fingerprint
 
     def get_nb_translated_words(self,s0,s1):
-        s0=self._preprocess_text(s0)
-        s1=self._preprocess_text(s1)
+        s0=preprocess_text(s0)
+        s1=preprocess_text(s1)
 
         words0=s0.split(" ")
         words1=s1.split(" ")
@@ -102,13 +99,12 @@ class BilingualTextMatcher:
                 for word1 in words1:
                     if word1 in self.dicts[0][word0]:
                         nb_match+=1
-
         return nb_match
                     
 
     def get_nb_equal_words(self,s0,s1):
-        words0=set(self._preprocess_text(s0).split(" "))
-        words1=set(self._preprocess_text(s1).split(" "))
+        words0=set(preprocess_text(s0).split(" "))
+        words1=set(preprocess_text(s1).split(" "))
         equal_words=words0.intersection(words1)
         equal_words_not_in_dict=[word for word in equal_words if (not word in self.dicts[0]) and len(word)>2]
         return len(equal_words_not_in_dict)
@@ -121,8 +117,8 @@ class BilingualTextMatcher:
 
         nb_matching_words=nb_translated_words+nb_equal_words
 
-        max_text_length=max(self._text_length(s0),self._text_length(s1))
-        if nb_matching_words>=(max_text_length/3+1):
+        max_text_length=max(nb_words(s0),nb_words(s1))
+        if nb_matching_words>=(max_text_length/REQUIRED_MATCH_RATIO+1):
             return True
         else:
             return False

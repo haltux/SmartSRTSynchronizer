@@ -2,13 +2,21 @@ SmartSRTSynchronizer
 
 Automatic subtitles synchronizer.
 
-Generates a properly synchronized subtitle file from an out-of-sync subtitle file and a properly synchronized subtitle file in another language. 
+Inputs:
+- An out-of-sync subtitle file in language A (default french)
+- A properly synchronized subtitle file in language B (default english)
 
-Multiplicative and additive factors are supported, as well as gaps in subtitle (changes in the additive factor during the video, often occuring between TV and DVD versions of subtitles).
+Outputs:
+- A properly synchronized subtitle file in language A
+
+Multiplicative and additive factors are supported, as well as gaps in subtitles, that is modification of additive factor during the video. This occurs typically with fade to blacks, often added in TV versions.
+
+SmartSRTSynchronizer requires a dictionary. A french-english dictionary is provided and used by default. Other dictionaries has to be provided in the wiktionary format. They can be downloaded from here: http://www.dicts.info/uddl.php
+
 
 Usage:   ./smartSRTSynchronizer [options] text_file.srt sync_file.srt out.srt
          ./smartSRTSynchronizer [options]
-      -e <encoding>                          Encoding of input text file
+      -e <encoding>                             Encoding of input text file
       --encoding_text_file=<encoding>
       --encoding_sync_file=<encoding>
       --encoding_output=<encoding>
@@ -17,4 +25,4 @@ Usage:   ./smartSRTSynchronizer [options] text_file.srt sync_file.srt out.srt
       --invert-dictionary                       not inverted mode: target dictionary language = text subtitle language
                                                 inverted mode: target dictionary language = sync subtitle language
       --max_shift=X                             maximum shift between subtitles, in min. default:5
-      -g                                        Display output graph (for debugging purposes)
+      -g                                        Display output graph 

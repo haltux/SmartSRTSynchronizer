@@ -9,7 +9,7 @@ Inputs:
 Outputs:
 - A properly synchronized subtitle file in language A
 
-Multiplicative and additive factors are supported, as well as gaps in subtitles, that is modification of additive factor during the video. This occurs typically with fade to blacks, often added in TV versions.
+Multiplicative and additive factors are supported, as well as gaps in subtitles (modification of additive factor during the video), which typically occur with fade to blacks, often added in TV versions.
 
 SmartSRTSynchronizer requires a dictionary. A french-english dictionary is provided and used by default. Other dictionaries has to be provided in the wiktionary format. They can be downloaded from here: http://www.dicts.info/uddl.php
 

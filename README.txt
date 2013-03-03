@@ -22,7 +22,9 @@ Usage:   ./smartSRTSynchronizer [options] text_file.srt sync_file.srt out.srt
       --encoding_output=<encoding>
       --dictionary=<dictionary_file>            use external wiktionary dictionnary
                                                 default provided dictionary: english-french
-      --invert-dictionary                       not inverted mode: target dictionary language = text subtitle language
-                                                inverted mode: target dictionary language = sync subtitle language
+      --invert-dictionary       not inverted mode:
+                                    target dictionary language = text subtitle language
+                                inverted mode:
+                                    target dictionary language = sync subtitle language
       --max_shift=X                             maximum shift between subtitles, in min. default:5
       -g                                        Display output graph 
